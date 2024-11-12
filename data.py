@@ -1,8 +1,11 @@
 import subprocess
-from fastai.data.transforms import Transform
-from fastai.data.block import TransformBlock
+from fastai.data.core import DataLoaders
+from fastai.data.transforms import RandomSplitter, Transform
+from fastai.data.block import CategoryBlock, DataBlock, TransformBlock
 from fastai.data.transforms import get_files
+from fastai.data import *
 from pathlib import Path
+from audiocrush.augment import RandomNoise, RandomResample
 from audiocrush.core import TensorAudio
 
 from fastai.torch_basics import *
@@ -26,10 +29,10 @@ class AudioTensorCreate(Transform):
 
     def encodes(self, orig_path: Path):
         # Check if the file is cached
-        cached_file_path = Path(Path(orig_path).name).with_suffix(f'.raw_{self.encoding_string}_{str(self.sample_rate)}hz_{str(self.bit_depth)}bits_{str(self.channels)}ch{self.channel_encoding_string}')
-        if not cached_file_path.exists():
-            self.cache_file(orig_path, cached_file_path)
-        waveform = self.load_complete_file(cached_file_path)
+        cache_path = Path(Path(orig_path).name).with_suffix(f'.raw_{self.encoding_string}_{str(self.sample_rate)}hz_{str(self.bit_depth)}bits_{str(self.channels)}ch{self.channel_encoding_string}')
+        if not cache_path.exists():
+            self.cache_file(orig_path, cache_path)
+        waveform = self.load_complete_file(cache_path)
         # print(f"got file: {cached_file_path} { (orig_path)}")
         target_length = int(self.duration * self.sample_rate)
         current_length = waveform.size(1)
@@ -37,7 +40,10 @@ class AudioTensorCreate(Transform):
         waveform = torch.nn.functional.pad(waveform, (0, pad_length), mode='constant', value=0)
         waveform = waveform[:,:target_length]
         # Create a TensorAudio object
-        return TensorAudio(waveform, sample_rate=self.sample_rate, cached_file_path=cached_file_path, orig_path=orig_path)
+        return TensorAudio(waveform, sample_rate=self.sample_rate, cache_path=cache_path, orig_path=orig_path)
+    
+    def decodes(self, x: TensorAudio):
+        return x
 
     def cache_file(self, orig_path, cached_file_path):
         temp_output_path = str(cached_file_path) + '.tmp'
@@ -80,4 +86,18 @@ audio_extensions = set(k for k,v in mimetypes.types_map.items() if v.startswith(
 
 def get_audio_file_names(path, extensions=None, recurse=True, folders=None):
     return get_files(path, extensions=extensions or audio_extensions, recurse=recurse, folders=folders)
+
+class AudioDataLoaders(DataLoaders):
+    "Basic wrapper around `DataLoader`s with factory methods for audio tasks"
+    
+    @classmethod
+    @delegates(DataLoaders.from_dblock)
+    def from_path_func(cls, path, fnames, label_func, valid_pct=0.2, seed=None, item_tfms=None, batch_tfms=None, 
+                       audio_cls=TensorAudio, **kwargs):
+        dblock = DataBlock(blocks=(AudioBlock(), CategoryBlock),
+                           splitter=RandomSplitter(valid_pct, seed=seed),
+                           get_y=label_func,
+                           item_tfms=item_tfms,
+                           batch_tfms=batch_tfms)
+        return cls.from_dblock(dblock, fnames, path=path, **kwargs)
 

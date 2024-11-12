@@ -17,44 +17,40 @@ import torchaudio
 import torch
 from fastai.vision.augment import RandTransform
 from audiocrush.core import TensorAudio
+import math
 
 class RandomResample(RandTransform):
-    "Randomly resample the audio to create pitch and speed augmentation, with cached resamplers."
-    order = 10  # Order in which this transform is applied
+    order = 10  # order in the pipeline in which the transform is applied
     split_idx = 0
     do_decode = False
 
     def __init__(
         self,
-        min_factor=0.75,              # Minimum scaling factor
-        max_factor=1.3,             # Maximum scaling factor
-        p=0.5,                       # Probability of applying the transform
-        max_resamplers=100,          # Number of resamplers to cache
-        lazy=True,                   # Whether to create resamplers lazily
-        fixed_orig_freq = 32000,     # Always use this as the basis frequency, regardless of each clip's original sample rate
+        min_factor=0.8,         
+        max_factor=1.25,            
+        p=0.5, # probability of applying the transform
     ):
         super().__init__(p=p)
         self.min_factor = min_factor
         self.max_factor = max_factor
         
 def encodes(self, x: TensorAudio):
-    import math
-
+    # perform a very crude but fast resampling using linear interpolation
     orig_length = x.shape[-1]
     scaling_factor = random.uniform(self.min_factor, self.max_factor)
 
     if scaling_factor > 1:
-        # Upsampling: compute the required input length and truncate
+        # upsampling: compute the required input length and truncate
         input_length = math.ceil(orig_length / scaling_factor)
         x = x[..., :input_length]
-        # Interpolate to the original length
+        # interpolate to the original length
         x = torch.nn.functional.interpolate(x, size=orig_length, mode='linear')
     elif scaling_factor < 1:
-        # Downsampling: compute the new length after scaling
+        # downsampling: compute the new length after scaling
         resampled_length = math.ceil(orig_length * scaling_factor)
-        # Interpolate to the resampled length
+        # interpolate to the resampled length
         x = torch.nn.functional.interpolate(x, size=resampled_length, mode='linear')
-        # Pad to match the original length
+        # pad to match the original length
         padding = orig_length - resampled_length
         x = torch.nn.functional.pad(x, (0, padding), mode='constant', value=0)
     else:
@@ -164,7 +160,7 @@ class RandomNoise(RandTransform):
     split_idx = 0
     do_decode = False
 
-    def __init__(self, min_gain=0.0, max_gain=0.07, p=0.5):
+    def __init__(self, min_gain=0.0, max_gain=0.001, p=0.5):
         super().__init__(p=p)
         self.min_gain = min_gain
         self.max_gain = max_gain
@@ -190,7 +186,7 @@ class RandomNoise(RandTransform):
         noisy_waveform = x + noise
 
         # Ensure the waveform stays within valid range [-1.0, 1.0]
-        noisy_waveform = torch.clamp(noisy_waveform, -1.0, 1.0)
+        # noisy_waveform = torch.clamp(noisy_waveform, -1.0, 1.0)
 
         # Retain the original sample rate and metadata
         noisy_waveform = noisy_waveform.to(device=device, dtype=dtype)
