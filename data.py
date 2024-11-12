@@ -28,7 +28,6 @@ class AudioTensorCreate(Transform):
             pass # TODO
 
     def encodes(self, orig_path: Path):
-        # Check if the file is cached
         cache_path = Path(Path(orig_path).name).with_suffix(f'.raw_{self.encoding_string}_{str(self.sample_rate)}hz_{str(self.bit_depth)}bits_{str(self.channels)}ch{self.channel_encoding_string}')
         if not cache_path.exists():
             self.cache_file(orig_path, cache_path)
@@ -100,4 +99,3 @@ class AudioDataLoaders(DataLoaders):
                            item_tfms=item_tfms,
                            batch_tfms=batch_tfms)
         return cls.from_dblock(dblock, fnames, path=path, **kwargs)
-
